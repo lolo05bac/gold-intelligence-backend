@@ -1,0 +1,215 @@
+{
+  "config": {
+    "min_train_years": 2,
+    "test_block_months": 3,
+    "n_folds": 4
+  },
+  "aggregate": {
+    "accuracy": {
+      "mean": 0.5336,
+      "std": 0.0574,
+      "min": 0.4603,
+      "max": 0.6094
+    },
+    "roc_auc": {
+      "mean": 0.5303,
+      "std": 0.0737,
+      "min": 0.4451,
+      "max": 0.6059
+    },
+    "brier_score": {
+      "mean": 0.2569,
+      "std": 0.0079,
+      "min": 0.2445,
+      "max": 0.2665
+    },
+    "f1": {
+      "mean": 0.5862,
+      "std": 0.0964,
+      "min": 0.4706,
+      "max": 0.7368
+    },
+    "avg_return_per_signal": {
+      "mean": 0.0014,
+      "std": 0.0014,
+      "min": -0.0008,
+      "max": 0.0031
+    },
+    "sharpe_approx": {
+      "mean": 1.5874,
+      "std": 1.7794,
+      "min": -0.7825,
+      "max": 4.1448
+    },
+    "high_conf_accuracy": {
+      "mean": 0.5976,
+      "std": 0.0216
+    }
+  },
+  "folds": [
+    {
+      "accuracy": 0.5645161290322581,
+      "precision_bull": 0.5757575757575758,
+      "precision_bear": 0.5517241379310345,
+      "recall": 0.59375,
+      "f1": 0.5846153846153846,
+      "roc_auc": 0.6010416666666667,
+      "brier_score": 0.24454233845430115,
+      "high_conf_accuracy": 0.6071428571428571,
+      "high_conf_n": 28,
+      "move_correlation": -0.0031180702213055435,
+      "avg_return_per_signal": 0.0010349553838308475,
+      "total_return": 0.06416723379751255,
+      "sharpe_approx": 0.9982074373381709,
+      "by_regime": {
+        "risk_off": {
+          "accuracy": 0.25,
+          "n": 8
+        },
+        "usd_dominant": {
+          "accuracy": 0.6,
+          "n": 20
+        },
+        "real_yield_driven": {
+          "accuracy": 0.5625,
+          "n": 16
+        },
+        "inflation_scare": {
+          "accuracy": 0.6666666666666666,
+          "n": 6
+        },
+        "fed_event": {
+          "accuracy": 0.7,
+          "n": 10
+        }
+      },
+      "fold": 13,
+      "train_end": "2025-03-28",
+      "test_start": "2025-03-29",
+      "test_end": "2025-06-27",
+      "n_train": 311,
+      "n_test": 62
+    },
+    {
+      "accuracy": 0.609375,
+      "precision_bull": 0.625,
+      "precision_bear": 0.5,
+      "recall": 0.8974358974358975,
+      "f1": 0.7368421052631579,
+      "roc_auc": 0.44512820512820517,
+      "brier_score": 0.25843560236991675,
+      "high_conf_accuracy": 0.5625,
+      "high_conf_n": 32,
+      "move_correlation": 0.11912396371702962,
+      "avg_return_per_signal": 0.0022531751412554583,
+      "total_return": 0.14420320904034933,
+      "sharpe_approx": 4.1448368516674785,
+      "by_regime": {
+        "usd_dominant": {
+          "accuracy": 0.7857142857142857,
+          "n": 14
+        },
+        "real_yield_driven": {
+          "accuracy": 0.5,
+          "n": 22
+        },
+        "fed_event": {
+          "accuracy": 0.55,
+          "n": 20
+        },
+        "range_bound": {
+          "accuracy": 0.7142857142857143,
+          "n": 7
+        }
+      },
+      "fold": 14,
+      "train_end": "2025-06-27",
+      "test_start": "2025-06-28",
+      "test_end": "2025-09-26",
+      "n_train": 373,
+      "n_test": 64
+    },
+    {
+      "accuracy": 0.4603174603174603,
+      "precision_bull": 0.5675675675675675,
+      "precision_bear": 0.3076923076923077,
+      "recall": 0.5384615384615384,
+      "f1": 0.5526315789473685,
+      "roc_auc": 0.469017094017094,
+      "brier_score": 0.2581693937600785,
+      "high_conf_accuracy": 0.6,
+      "high_conf_n": 10,
+      "move_correlation": -0.007815504268517222,
+      "avg_return_per_signal": -0.0007820304921792758,
+      "total_return": -0.04926792100729438,
+      "sharpe_approx": -0.7825226517476844,
+      "by_regime": {
+        "risk_off": {
+          "accuracy": 0.14285714285714285,
+          "n": 7
+        },
+        "real_yield_driven": {
+          "accuracy": 0.5,
+          "n": 22
+        },
+        "fed_event": {
+          "accuracy": 0.23076923076923078,
+          "n": 13
+        },
+        "range_bound": {
+          "accuracy": 0.6470588235294118,
+          "n": 17
+        }
+      },
+      "fold": 15,
+      "train_end": "2025-09-26",
+      "test_start": "2025-09-27",
+      "test_end": "2025-12-26",
+      "n_train": 437,
+      "n_test": 63
+    },
+    {
+      "accuracy": 0.5,
+      "precision_bull": 0.6,
+      "precision_bear": 0.4411764705882353,
+      "recall": 0.3870967741935484,
+      "f1": 0.47058823529411764,
+      "roc_auc": 0.605890603085554,
+      "brier_score": 0.26651888123609235,
+      "high_conf_accuracy": 0.6206896551724138,
+      "high_conf_n": 29,
+      "move_correlation": -0.010980416415228565,
+      "avg_return_per_signal": 0.0030673022624471075,
+      "total_return": 0.1656343221721438,
+      "sharpe_approx": 1.989258265796725,
+      "by_regime": {
+        "risk_off": {
+          "accuracy": 0.5,
+          "n": 6
+        },
+        "usd_dominant": {
+          "accuracy": 0.4166666666666667,
+          "n": 12
+        },
+        "real_yield_driven": {
+          "accuracy": 0.5384615384615384,
+          "n": 13
+        },
+        "fed_event": {
+          "accuracy": 0.5555555555555556,
+          "n": 9
+        },
+        "range_bound": {
+          "accuracy": 0.5,
+          "n": 14
+        }
+      },
+      "fold": 16,
+      "train_end": "2025-12-26",
+      "test_start": "2025-12-27",
+      "test_end": "2026-03-17",
+      "n_train": 500,
+      "n_test": 54
+    }
+  ]
+}
