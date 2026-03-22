@@ -1,5 +1,7 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 
 app = FastAPI(title="GoldIntel API", version="2.4")
 
@@ -22,7 +24,7 @@ async def health():
 @app.get("/api/signal/latest")
 async def latest_signal():
     return {
-        "signal_date": "2026-03-21",
+        "signal_date": "2026-03-22",
         "weekly_bias": 7.8,
         "weekly_move": "+1.8%",
         "weekly_probability": 71,
@@ -40,3 +42,7 @@ async def latest_signal():
             {"name": "PPI could surprise hawkish", "impact": 38},
         ],
     }
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
