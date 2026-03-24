@@ -6,246 +6,224 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-app = FastAPI(title="GoldIntel API", version="2.4")
+app = FastAPI(title="GoldIntel API", version="3.0")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+current_signal = {"status": "initializing"}
 
-# Live signal data (updated by background task)
-current_signal = {
-    "signal_date": datetime.now().strftime("%Y-%m-%d"),
-    "weekly_bias": 7.8,
-    "weekly_move": "+1.8%",
-    "weekly_probability": 71,
-    "weekly_confidence": 76,
-    "daily_bias": 6.9,
-    "daily_move": "+0.34%",
-    "regime": "Geopolitical Risk-Bid / Falling Yields",
-    "bullish_drivers": [
-        {"name": "ME tensions sustaining safe-haven flows", "impact": 94},
-        {"name": "Real yields declining", "impact": 89},
-        {"name": "DXY weakening", "impact": 82},
-    ],
-    "bearish_drivers": [
-        {"name": "Overbought on weekly RSI", "impact": 45},
-        {"name": "PPI could surprise hawkish", "impact": 38},
-    ],
-    "last_updated": datetime.now().isoformat(),
-}
+def compute_rsi(prices, period=14):
+    import numpy as np
+    deltas = list(map(float, [prices[i] - prices[i-1] for i in range(-(period), 0)]))
+    gains = [d for d in deltas if d > 0]
+    losses = [-d for d in deltas if d < 0]
+    avg_gain = sum(gains)/len(gains) if gains else 0
+    avg_loss = sum(losses)/len(losses) if losses else 0.001
+    return round(100 - (100 / (1 + avg_gain/avg_loss)), 1)
 
+def compute_ema(prices, period):
+    m = 2/(period+1)
+    e = [prices[0]]
+    for p in prices[1:]:
+        e.append((p - e[-1])*m + e[-1])
+    return e
 
 def update_signal():
-    """Fetch fresh data and update the signal."""
     global current_signal
     try:
         import yfinance as yf
         import numpy as np
-
-        # Fetch latest gold data
-        gold = yf.download("GC=F", period="60d", progress=False)
+        gold = yf.download("GC=F", period="250d", progress=False)
         dxy_data = yf.download("DX-Y.NYB", period="60d", progress=False)
         vix_data = yf.download("^VIX", period="60d", progress=False)
         spx_data = yf.download("^GSPC", period="60d", progress=False)
         oil_data = yf.download("CL=F", period="60d", progress=False)
-
-        if len(gold) < 10:
-            print("Not enough gold data")
-            return
-
-        # Calculate indicators
-        gold_close = gold["Close"].values.flatten()
-        gold_return_1d = (gold_close[-1] - gold_close[-2]) / gold_close[-2] * 100
-        gold_return_5d = (gold_close[-1] - gold_close[-6]) / gold_close[-6] * 100
-        gold_return_20d = (gold_close[-1] - gold_close[-21]) / gold_close[-21] * 100
-
-        # RSI
-        deltas = np.diff(gold_close[-15:])
-        gains = np.mean([d for d in deltas if d > 0]) if any(d > 0 for d in deltas) else 0
-        losses = -np.mean([d for d in deltas if d < 0]) if any(d < 0 for d in deltas) else 0.001
-        rsi = 100 - (100 / (1 + gains / losses))
-
-        # DXY
-        dxy_change = 0
-        if len(dxy_data) >= 2:
-            dxy_vals = dxy_data["Close"].values.flatten()
-            dxy_change = (dxy_vals[-1] - dxy_vals[-2]) / dxy_vals[-2] * 100
-
-        # VIX
-        vix_level = 20
-        vix_change = 0
-        if len(vix_data) >= 2:
-            vix_vals = vix_data["Close"].values.flatten()
-            vix_level = float(vix_vals[-1])
-            vix_change = float(vix_vals[-1] - vix_vals[-2])
-
-        # SPX
-        spx_return = 0
-        if len(spx_data) >= 2:
-            spx_vals = spx_data["Close"].values.flatten()
-            spx_return = (spx_vals[-1] - spx_vals[-2]) / spx_vals[-2] * 100
-
-        # Oil
-        oil_return = 0
-        if len(oil_data) >= 2:
-            oil_vals = oil_data["Close"].values.flatten()
-            oil_return = (oil_vals[-1] - oil_vals[-2]) / oil_vals[-2] * 100
-
-        # Simple scoring logic
-        score = 5.0  # neutral
-
-        # Momentum
-        if gold_return_5d > 1: score += 0.8
-        elif gold_return_5d > 0: score += 0.3
-        elif gold_return_5d < -1: score -= 0.8
-        elif gold_return_5d < 0: score -= 0.3
-
-        # DXY inverse
-        if dxy_change < -0.3: score += 0.7
-        elif dxy_change < 0: score += 0.3
-        elif dxy_change > 0.3: score -= 0.7
-        elif dxy_change > 0: score -= 0.3
-
-        # VIX (fear = gold up)
-        if vix_change > 2: score += 0.8
-        elif vix_change > 0.5: score += 0.4
-        elif vix_change < -2: score -= 0.5
-
-        # Oil (inflation proxy)
-        if oil_return > 2: score += 0.5
-        elif oil_return < -2: score -= 0.3
-
-        # SPX inverse (risk off = gold up)
-        if spx_return < -1: score += 0.6
-        elif spx_return > 1: score -= 0.3
-
-        # RSI overbought/oversold
-        if rsi > 70: score -= 0.4
-        elif rsi < 30: score += 0.4
-
-        # Clamp
+        silver_data = yf.download("SI=F", period="60d", progress=False)
+        if len(gold) < 50: return
+        c = gold["Close"].values.flatten().astype(float)
+        h = gold["High"].values.flatten().astype(float)
+        l = gold["Low"].values.flatten().astype(float)
+        o = gold["Open"].values.flatten().astype(float)
+        rsi14 = compute_rsi(c, 14)
+        rsi7 = compute_rsi(c, 7)
+        ema12 = compute_ema(c.tolist(), 12)
+        ema26 = compute_ema(c.tolist(), 26)
+        macd_val = round(ema12[-1]-ema26[-1], 2)
+        macd_prev = round(ema12[-2]-ema26[-2], 2)
+        macd_sig = "Bullish" if macd_val > macd_prev else "Bearish"
+        ma20 = float(np.mean(c[-20:]))
+        std20 = float(np.std(c[-20:]))
+        bb_up = round(ma20+2*std20, 2)
+        bb_lo = round(ma20-2*std20, 2)
+        bb_pos = round((c[-1]-bb_lo)/(bb_up-bb_lo)*100, 1) if bb_up != bb_lo else 50
+        trs = [max(h[i]-l[i], abs(h[i]-c[i-1]), abs(l[i]-c[i-1])) for i in range(-14, 0)]
+        atr = round(float(np.mean(trs)), 2)
+        atr_pct = round(atr/c[-1]*100, 2)
+        ret1 = (c[-1]-c[-2])/c[-2]*100
+        ret5 = (c[-1]-c[-6])/c[-6]*100 if len(c)>6 else 0
+        ret20 = (c[-1]-c[-21])/c[-21]*100 if len(c)>21 else 0
+        ma_sigs = []
+        for p in [9,21,50,100,200]:
+            if len(c)>=p:
+                mv = round(float(np.mean(c[-p:])), 2)
+                ab = bool(c[-1]>mv)
+                d = round((c[-1]-mv)/mv*100, 2)
+                ma_sigs.append({"period": f"MA {p}", "value": mv, "signal": "Bullish" if ab else "Bearish", "distance": f"{d:+.2f}%"})
+        cross = {}
+        if len(c)>=200:
+            m50=np.mean(c[-50:]); m200=np.mean(c[-200:])
+            cross = {"type": "Above (Bullish)" if m50>m200 else "Below (Bearish)", "signal": "Bullish" if m50>m200 else "Bearish"}
+        hi20 = round(float(np.max(h[-20:])), 2)
+        lo20 = round(float(np.min(l[-20:])), 2)
+        pivot = round((hi20+lo20+float(c[-1]))/3, 2)
+        patterns = []
+        if len(c)>=10:
+            if c[-1]>c[-5] and c[-5]>c[-10]: patterns.append({"name":"Higher Highs","type":"bullish","strength":75})
+            if c[-1]<c[-5] and c[-5]<c[-10]: patterns.append({"name":"Lower Lows","type":"bearish","strength":75})
+        if len(c)>=20:
+            if c[-1]>max(h[-20:-1]): patterns.append({"name":"20-Day Breakout","type":"bullish","strength":80})
+            if c[-1]<min(l[-20:-1]): patterns.append({"name":"20-Day Breakdown","type":"bearish","strength":80})
+        if len(c)>=20:
+            dist20 = (c[-1]-ma20)/ma20*100
+            if dist20>3: patterns.append({"name":f"Extended Above MA20 ({dist20:+.1f}%)","type":"bearish","strength":60})
+            if dist20<-3: patterns.append({"name":f"Extended Below MA20 ({dist20:+.1f}%)","type":"bullish","strength":60})
+        if rsi14>70: patterns.append({"name":"RSI Overbought","type":"bearish","strength":55})
+        if rsi14<30: patterns.append({"name":"RSI Oversold","type":"bullish","strength":55})
+        dxy_v = float(dxy_data["Close"].values.flatten()[-1]) if len(dxy_data)>0 else 0
+        dxy_ch = float((dxy_data["Close"].values.flatten()[-1]-dxy_data["Close"].values.flatten()[-2])/dxy_data["Close"].values.flatten()[-2]*100) if len(dxy_data)>=2 else 0
+        vix_v = float(vix_data["Close"].values.flatten()[-1]) if len(vix_data)>0 else 20
+        vix_ch = float(vix_data["Close"].values.flatten()[-1]-vix_data["Close"].values.flatten()[-2]) if len(vix_data)>=2 else 0
+        spx_r = float((spx_data["Close"].values.flatten()[-1]-spx_data["Close"].values.flatten()[-2])/spx_data["Close"].values.flatten()[-2]*100) if len(spx_data)>=2 else 0
+        oil_p = float(oil_data["Close"].values.flatten()[-1]) if len(oil_data)>0 else 0
+        oil_r = float((oil_data["Close"].values.flatten()[-1]-oil_data["Close"].values.flatten()[-2])/oil_data["Close"].values.flatten()[-2]*100) if len(oil_data)>=2 else 0
+        sil_p = float(silver_data["Close"].values.flatten()[-1]) if len(silver_data)>0 else 0
+        sil_r = float((silver_data["Close"].values.flatten()[-1]-silver_data["Close"].values.flatten()[-2])/silver_data["Close"].values.flatten()[-2]*100) if len(silver_data)>=2 else 0
+        gs_ratio = round(c[-1]/sil_p, 1) if sil_p>0 else 0
+        score = 5.0
+        if rsi14>70: score-=0.8
+        elif rsi14<30: score+=0.8
+        ma_b = sum(1 for m in ma_sigs if m["signal"]=="Bullish")
+        ma_br = sum(1 for m in ma_sigs if m["signal"]=="Bearish")
+        score += (ma_b-ma_br)*0.25
+        if macd_val>0 and macd_val>macd_prev: score+=0.4
+        elif macd_val<0 and macd_val<macd_prev: score-=0.4
+        if ret5>2: score+=0.7
+        elif ret5>0: score+=0.2
+        elif ret5<-2: score-=0.7
+        elif ret5<0: score-=0.2
+        if dxy_ch<-0.3: score+=0.6
+        elif dxy_ch>0.3: score-=0.6
+        if vix_ch>2: score+=0.5
+        elif vix_ch<-2: score-=0.4
+        if spx_r<-1: score+=0.5
+        elif spx_r>1: score-=0.3
+        for p in patterns:
+            if p["type"]=="bullish": score+=p["strength"]/250
+            else: score-=p["strength"]/250
+        if bb_pos>90: score-=0.3
+        elif bb_pos<10: score+=0.3
         score = max(1.0, min(10.0, score))
-        weekly_score = max(1.0, min(10.0, score + gold_return_5d * 0.3))
-
-        # Build drivers
-        bullish = []
-        bearish = []
-
-        if dxy_change < 0:
-            bullish.append({"name": f"USD weakness (DXY {dxy_change:+.2f}%)", "impact": min(int(abs(dxy_change) * 100 + 50), 99)})
-        else:
-            bearish.append({"name": f"USD strength (DXY {dxy_change:+.2f}%)", "impact": min(int(abs(dxy_change) * 100 + 30), 99)})
-
-        if vix_change > 0:
-            bullish.append({"name": f"VIX rising ({vix_level:.1f}, +{vix_change:.1f})", "impact": min(int(vix_change * 15 + 50), 99)})
-        else:
-            bearish.append({"name": f"VIX declining ({vix_level:.1f}, {vix_change:.1f})", "impact": min(int(abs(vix_change) * 10 + 30), 99)})
-
-        if gold_return_5d > 0:
-            bullish.append({"name": f"5-day momentum positive ({gold_return_5d:+.2f}%)", "impact": min(int(gold_return_5d * 20 + 50), 99)})
-        else:
-            bearish.append({"name": f"5-day momentum negative ({gold_return_5d:+.2f}%)", "impact": min(int(abs(gold_return_5d) * 20 + 30), 99)})
-
-        if spx_return < 0:
-            bullish.append({"name": f"Equities falling — risk-off (SPX {spx_return:+.2f}%)", "impact": min(int(abs(spx_return) * 30 + 40), 99)})
-        else:
-            bearish.append({"name": f"Equities rising — risk-on (SPX {spx_return:+.2f}%)", "impact": min(int(spx_return * 20 + 25), 99)})
-
-        if oil_return > 0:
-            bullish.append({"name": f"Oil rising — inflation hedge ({oil_return:+.2f}%)", "impact": min(int(oil_return * 15 + 40), 99)})
-        else:
-            bearish.append({"name": f"Oil falling — deflation signal ({oil_return:+.2f}%)", "impact": min(int(abs(oil_return) * 10 + 25), 99)})
-
-        if rsi > 65:
-            bearish.append({"name": f"RSI overbought ({rsi:.0f})", "impact": min(int((rsi - 50) * 2), 99)})
-        elif rsi < 35:
-            bullish.append({"name": f"RSI oversold ({rsi:.0f})", "impact": min(int((50 - rsi) * 2), 99)})
-
-        # Sort by impact
-        bullish.sort(key=lambda x: x["impact"], reverse=True)
-        bearish.sort(key=lambda x: x["impact"], reverse=True)
-
-        # Determine regime
-        if vix_change > 2 and spx_return < -0.5:
-            regime = "Risk-Off / Flight to Safety"
-        elif abs(dxy_change) > 0.3:
-            regime = "USD-Dominant"
-        elif gold_return_20d > 5:
-            regime = "Trend / Momentum"
-        elif oil_return > 1.5:
-            regime = "Inflation Hedge"
-        else:
-            regime = "Mixed / Range-Bound"
-
-        # Expected moves
-        daily_move = f"{gold_return_1d:+.2f}%"
-        weekly_move = f"{gold_return_5d:+.2f}%"
-
-        prob = max(30, min(85, int(score * 8 + 10)))
-        conf = max(25, min(90, int(abs(score - 5) * 15 + 40)))
-
+        ws = max(1.0, min(10.0, score + ret5*0.15))
+        bull, bear = [], []
+        if dxy_ch<0: bull.append({"name":f"USD weakness (DXY {dxy_ch:+.2f}%)","impact":min(int(abs(dxy_ch)*70+40),99)})
+        else: bear.append({"name":f"USD strength (DXY {dxy_ch:+.2f}%)","impact":min(int(abs(dxy_ch)*70+30),99)})
+        if vix_ch>0: bull.append({"name":f"VIX rising ({vix_v:.1f}, {vix_ch:+.1f})","impact":min(int(vix_ch*12+42),99)})
+        else: bear.append({"name":f"VIX declining ({vix_v:.1f}, {vix_ch:+.1f})","impact":min(int(abs(vix_ch)*10+28),99)})
+        if ret5>0: bull.append({"name":f"5d momentum +({ret5:+.2f}%)","impact":min(int(ret5*14+42),99)})
+        else: bear.append({"name":f"5d momentum -({ret5:+.2f}%)","impact":min(int(abs(ret5)*14+32),99)})
+        if spx_r<0: bull.append({"name":f"Equities falling (SPX {spx_r:+.2f}%)","impact":min(int(abs(spx_r)*22+32),99)})
+        else: bear.append({"name":f"Equities rising (SPX {spx_r:+.2f}%)","impact":min(int(spx_r*14+22),99)})
+        if macd_sig=="Bullish": bull.append({"name":f"MACD bullish ({macd_val:+.1f})","impact":min(int(abs(macd_val)*1.5+38),99)})
+        else: bear.append({"name":f"MACD bearish ({macd_val:+.1f})","impact":min(int(abs(macd_val)*1.5+28),99)})
+        if oil_r>0.5: bull.append({"name":f"Oil rising ({oil_r:+.2f}%)","impact":min(int(oil_r*10+32),99)})
+        elif oil_r<-0.5: bear.append({"name":f"Oil falling ({oil_r:+.2f}%)","impact":min(int(abs(oil_r)*8+22),99)})
+        for p in patterns:
+            e = {"name":p["name"],"impact":p["strength"]}
+            if p["type"]=="bullish": bull.append(e)
+            else: bear.append(e)
+        bull.sort(key=lambda x:x["impact"], reverse=True)
+        bear.sort(key=lambda x:x["impact"], reverse=True)
+        if vix_ch>2 and spx_r<-0.5: regime="Risk-Off / Flight to Safety"
+        elif abs(dxy_ch)>0.3: regime="USD-Dominant"
+        elif ret20>5: regime="Trend / Momentum"
+        elif oil_r>1.5: regime="Inflation Hedge"
+        elif abs(ret5)<1 and atr_pct<1: regime="Low Vol / Range-Bound"
+        else: regime="Mixed / Transitional"
+        prob = max(25,min(85,int(score*8+8)))
+        conf = max(20,min(90,int(abs(score-5)*14+35)))
+        fc = []
+        dvol = float(np.std(np.diff(c[-20:])/c[-21:-1])) if len(c)>20 else 0.01
+        trend = (c[-1]-c[-5])/c[-5] if len(c)>5 else 0
+        today = datetime.now()
+        cum = 0
+        for i in range(5):
+            d = today+timedelta(days=i+1)
+            while d.weekday()>=5: d+=timedelta(days=1)
+            dm = trend*0.3+(5-ws)*0.001*(1+i*0.1)
+            if rsi14>70: dm-=0.003*(i+1)
+            elif rsi14<30: dm+=0.003*(i+1)
+            cn = max(25,int(70-i*8))
+            db = max(1,min(10,ws+dm*200))
+            cum+=dm*100
+            pt = round(float(c[-1])*(1+cum/100), 2)
+            fc.append({"day":d.strftime("%a %d"),"bias":round(db,1),"expected_move":f"{dm*100:+.2f}%","price_target":pt,"confidence":cn})
         current_signal = {
             "signal_date": datetime.now().strftime("%Y-%m-%d"),
-            "weekly_bias": round(weekly_score, 1),
-            "weekly_move": weekly_move,
-            "weekly_probability": prob,
-            "weekly_confidence": conf,
-            "daily_bias": round(score, 1),
-            "daily_move": daily_move,
-            "regime": regime,
-            "bullish_drivers": bullish[:5],
-            "bearish_drivers": bearish[:5],
             "last_updated": datetime.now().isoformat(),
-            "gold_price": float(gold_close[-1]),
-            "dxy": float(dxy_data["Close"].values.flatten()[-1]) if len(dxy_data) > 0 else 0,
-            "vix": float(vix_level),
+            "weekly_bias": round(ws,1), "weekly_move": f"{ret5:+.2f}%",
+            "weekly_probability": prob, "weekly_confidence": conf,
+            "daily_bias": round(score,1), "daily_move": f"{ret1:+.2f}%",
+            "regime": regime,
+            "bullish_drivers": bull[:8], "bearish_drivers": bear[:8],
+            "gold_price": round(float(c[-1]),2), "gold_open": round(float(o[-1]),2),
+            "gold_high": round(float(h[-1]),2), "gold_low": round(float(l[-1]),2),
+            "dxy": round(float(dxy_v),2), "dxy_change": round(float(dxy_ch),2),
+            "vix": round(float(vix_v),1), "vix_change": round(float(vix_ch),2),
+            "spx_return": round(float(spx_r),2),
+            "oil_price": round(float(oil_p),2), "oil_return": round(float(oil_r),2),
+            "silver_price": round(float(sil_p),2), "silver_return": round(float(sil_r),2),
+            "gold_silver_ratio": gs_ratio,
+            "rsi_14": rsi14, "rsi_7": rsi7,
+            "macd": {"value":macd_val,"signal":macd_sig,"prev":macd_prev},
+            "atr": atr, "atr_pct": atr_pct,
+            "bollinger": {"upper":bb_up,"lower":bb_lo,"position":bb_pos},
+            "ma_signals": ma_sigs, "ma_cross": cross,
+            "support_resistance": {"resistance_1":round(float(np.percentile(h[-20:],75)),2),"resistance_2":hi20,"support_1":round(float(np.percentile(l[-20:],25)),2),"support_2":lo20,"pivot":pivot},
+            "patterns": patterns,
+            "five_day_forecast": fc,
+            "returns": {"1d":round(ret1,2),"5d":round(ret5,2),"20d":round(ret20,2)},
         }
-
-        print(f"Signal updated: Bias {score:.1f}/10, Weekly {weekly_score:.1f}/10 at {datetime.now()}")
-
+        print(f"Updated: D{score:.1f} W{ws:.1f} RSI{rsi14} MACD{macd_sig} {datetime.now()}")
     except Exception as e:
         print(f"Update failed: {e}")
+        import traceback; traceback.print_exc()
 
-
-def background_updater():
-    """Run updates every 10 minutes during market hours."""
+def bg():
     while True:
-        try:
-            update_signal()
-        except Exception as e:
-            print(f"Background update error: {e}")
-        time.sleep(600)  # 10 minutes
-
+        try: update_signal()
+        except: pass
+        time.sleep(600)
 
 @app.on_event("startup")
 async def startup():
-    thread = threading.Thread(target=background_updater, daemon=True)
-    thread.start()
-    print("Background updater started — refreshing every 10 minutes")
-
+    threading.Thread(target=bg, daemon=True).start()
+    print("Updater started — 10min refresh")
 
 @app.get("/")
 async def root():
-    return {"service": "GoldIntel API", "version": "2.4", "status": "operational"}
+    return {"service":"GoldIntel API","version":"3.0","status":"operational"}
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy"}
+    return {"status":"healthy"}
 
 @app.get("/api/signal/latest")
-async def latest_signal():
+async def latest():
     return current_signal
 
 @app.get("/api/refresh")
-async def manual_refresh():
+async def refresh():
     update_signal()
-    return {"status": "refreshed", "signal": current_signal}
+    return {"status":"refreshed"}
 
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+if __name__=="__main__":
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT",8080)))
